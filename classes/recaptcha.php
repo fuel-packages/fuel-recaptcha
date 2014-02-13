@@ -146,9 +146,10 @@ class ReCaptcha
 			$server = \Config::get('recaptcha.server');
 		}
 
-		$html = \View::factory('form')
-			->set('server', $server)
-			->set('public_key', \Config::get('recaptcha.public_key'));
+		$html = \View::forge('form', array(
+			'server' => $server,
+			'public_key' => \Config::get('recaptcha.public_key')
+        ), false);
 
 		return $html;
 	}
