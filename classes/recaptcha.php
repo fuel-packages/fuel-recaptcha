@@ -104,8 +104,9 @@ class ReCaptcha
 				'remoteip' => $remoteip,
 			) 
 		);
-		
+		if($response) 
 		return $response->success;
+		else return false;
 	}
 	
 
