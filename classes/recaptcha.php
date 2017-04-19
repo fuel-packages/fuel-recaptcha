@@ -38,175 +38,137 @@
 * @package     Fuel
 * @subpackage  Packages
 * @category    Captcha
-* @author      Power Head <p0w3rhead@gmail.com>
+* @authors
+*   Mike Crawford
+*   Ben Maurer
 */
 
 namespace ReCaptcha;
 
 class ReCaptcha
 {
-	public static function instance()
-	{
-		static $instance = null;
+    public static function instance()
+    {
+        static $instance = null;
 
-		if ($instance === null)
-		{
-			$instance = new static;
-		}
+        if ($instance === null)
+        {
+            $instance = new static;
+        }
 
-		return $instance;
-	}
+        return $instance;
+    }
 
-	public static function _init()
-	{
-		\Config::load('recaptcha', true);
-	}
+    public static function _init()
+    {
+        \Config::load('recaptcha', true);
+    }
 
-	/**
-	 * @var	contains error string
-	 */
-	protected $_error;
+    /**
+     * @var	contains error string
+     */
+    protected $_error;
 
-	/**
-    * Calls an HTTP POST function to verify if the user's guess was correct
-    * @param string $privkey
-    * @param string $remoteip
-    * @param string $challenge
-    * @param string $response
-    * @param array $extra_params an array of extra variables to post to the server
-    * @return bool
-    */
-	function check_answer ($remoteip, $challenge, $response, $extra_params = array())
-	{
+    /**
+     * Calls an HTTP POST function to verify if the user's guess was correct
+     * @param string $remoteip
+     * @param string $challenge
+     * @return bool
+     */
+    function check_answer ($remoteip, $challenge)
+    {
 
-		if (\Config::get('recaptcha.private_key') == '')
-		{
-			throw new \Exception('You did not supply an API key for Recaptcha');
-			return false;
-		}
+        if (\Config::get('recaptcha.private_key') == '')
+        {
+            throw new \Exception('You did not supply an API key for Recaptcha');
+            return false;
+        }
 
-		if ($remoteip == null || $remoteip == '')
-		{
-			throw new \Exception('For security reasons, you must pass the remote ip to reCAPTCHA');
-			return false;
-		}
+        if ($remoteip == null || $remoteip == '')
+        {
+            throw new \Exception('For security reasons, you must pass the remote ip to reCAPTCHA');
+            return false;
+        }
 
-		if ($challenge == null || strlen($challenge) == 0 || $response == null || strlen($response) == 0)
-		{
-			$this->_error = 'Incorrect captcha';
-			return false;
-		}
+        if ($challenge == null || strlen($challenge) == 0)
+        {
+            $this->_error = 'Incorrect captcha';
+            return false;
+        }
 
-		$response = $this->_http_post(
-			\Config::get('recaptcha.verify_server'),
-			"/recaptcha/api/verify",
-			array (
-				'privatekey' => \Config::get('recaptcha.private_key'),
-				'remoteip' => $remoteip,
-				'challenge' => $challenge,
-				'response' => $response
-			) + $extra_params
-		);
+        $response = $this->send(
+            array (
+                'secret' => \Config::get('recaptcha.private_key'),
+                'response' => $challenge,
+                'remoteip' => $remoteip,
+            )
+        );
+        if($response)
+            return $response->success;
+        else
+            throw new \Exception('Couldn\'t get the response back');
+    }
 
-		$answers = explode ("\n", $response[1]);
+    static function get_html ($use_ssl = false)
+    {
 
-		if (trim($answers[0]) == 'true')
-		{
-			return true;
-		}
-		else
-		{
-			$this->_error = $answers[1];
-			return false;
-		}
-	}
+        if (\Config::get('recaptcha.public_key') == '')
+        {
+            throw new \Exception('You did not supply an API key for Recaptcha');
+        }
 
-	/**
-	 * Gets the challenge HTML (javascript and non-javascript version).
-	 * @param string $pubkey A public key for reCAPTCHA
-	 * @param string $error The error given by reCAPTCHA (optional, default is null)
-	 * @param boolean $use_ssl Should the request be made over ssl? (optional, default is false)
-	 * @return string - The HTML to be embedded in the user's form.
-   */
+        if ($use_ssl)
+        {
+            $server = \Config::get('recaptcha.secure_server');
+        }
+        else
+        {
+            $server = \Config::get('recaptcha.server');
+        }
 
-	static function get_html ($use_ssl = false)
-	{
+        $html = \View::forge('form')
+            ->set('server', $server)
+            ->set('public_key', \Config::get('recaptcha.public_key'));
 
-		if (\Config::get('recaptcha.public_key') == '')
-		{
-			throw new \Exception('You did not supply an API key for Recaptcha');
-		}
+        return $html;
+    }
 
-		if ($use_ssl)
-		{
-			$server = \Config::get('recaptcha.secure_server');
-		}
-		else
-		{
-			$server = \Config::get('recaptcha.server');
-		}
 
-		$html = \View::forge('form')
-			->set('server', $server)
-			->set('public_key', \Config::get('recaptcha.public_key'));
+    /**
+     * Submits an HTTP POST to a reCAPTCHA server
+     * @param string $host
+     * @param string $path
+     * @param array $data
+     * @param int port
+     * @return array response
+     */
+    function send($data)
+    {
+        # Create a connection
+        $curl = Request::forge('https://www.google.com/recaptcha/api/siteverify', 'curl');
+        # Setting our options
+        $curl->set_method('post');
+        $curl->set_params($data);
+        # Set some options to be used in the request
+        $curl->set_options(array(
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_FOLLOWLOCATION => true,
+        )
+    );
+        // execute the request
+        $curl->execute();
 
-		return $html;
-	}
+        // fetch the resulting Response object
+        $response = $curl->response();
 
-	/**
-	 * Encodes the given data into a query string format
-	 * @param $data - array of string elements to be encoded
-	 * @return string - encoded request
-	 */
-	function _qsencode($data)
-	{
-		return http_build_query($data);
-	}
-
-	/**
-	 * Submits an HTTP POST to a reCAPTCHA server
-	 * @param string $host
-	 * @param string $path
-	 * @param array $data
-	 * @param int port
-	 * @return array response
-	 */
-	function _http_post($host, $path, $data, $port = 80)
-	{
-		$req = $this->_qsencode($data);
-
-		$http_request = implode('',array(
-			"POST $path HTTP/1.0\r\n",
-			"Host: $host\r\n",
-			"Content-Type: application/x-www-form-urlencoded;\r\n",
-			"Content-Length:".strlen($req)."\r\n",
-			"User-Agent: reCAPTCHA/PHP\r\n",
-			"\r\n",
-		$req));
-
-		$response = '';
-		if( false == ( $fs = @fsockopen($host, $port, $errno, $errstr, 10) ) )
-		{
-			throw new \Exception('Could not open socket');
-			return false;
-		}
-
-		fwrite($fs, $http_request);
-		while (!feof($fs))
-		{
-			$response .= fgets($fs, 1160); // One TCP-IP packet
-		}
-		fclose($fs);
-		$response = explode("\r\n\r\n", $response, 2);
-		return $response;
-	}
-
-	/**
-	 * Returns error
-	 * @return string
-	 */
-	public function get_error()
-	{
-		if ($this->_error) return $this->_error;
-	}
+        return $response;
+    }
+    /**
+     * Returns error
+     * @return string
+     */
+    public function get_error()
+    {
+        if ($this->_error) return $this->_error;
+    }
 }
