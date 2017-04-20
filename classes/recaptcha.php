@@ -160,7 +160,7 @@ class ReCaptcha
 
 		// fetch the resulting Response object
 		$response = $curl->response();
-		var_dump($response);
+
 		return JSON_decode($response->body);
 	}
 	/**
