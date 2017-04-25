@@ -1,17 +1,17 @@
 <?php
 /*
  * This is a PHP library that handles calling reCAPTCHA.
- *    - Documentation and latest version
- *          http://recaptcha.net/plugins/php/
- *    - Get a reCAPTCHA API Key
- *          http://recaptcha.net/api/getkey
- *    - Discussion group
- *          http://groups.google.com/group/recaptcha
+ *	  - Documentation and latest version
+ *			http://recaptcha.net/plugins/php/
+ *	  - Get a reCAPTCHA API Key
+ *			http://recaptcha.net/api/getkey
+ *	  - Discussion group
+ *			http://groups.google.com/group/recaptcha
  *
  * Copyright (c) 2007 reCAPTCHA -- http://recaptcha.net
  * AUTHORS:
- *   Mike Crawford
- *   Ben Maurer
+ *	 Mike Crawford
+ *	 Ben Maurer
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -35,10 +35,12 @@
 /**
 * ReCaptcha modified to integrate with Fuel
 *
-* @package     Fuel
+* @package	   Fuel
 * @subpackage  Packages
 * @category    Captcha
-* @author      Power Head <p0w3rhead@gmail.com>
+* @authors
+*	Mike Crawford
+*	Ben Maurer
 */
 
 namespace ReCaptcha;
@@ -63,20 +65,17 @@ class ReCaptcha
 	}
 
 	/**
-	 * @var	contains error string
-	 */
+	* @var contains error string
+	*/
 	protected $_error;
 
 	/**
-    * Calls an HTTP POST function to verify if the user's guess was correct
-    * @param string $privkey
-    * @param string $remoteip
-    * @param string $challenge
-    * @param string $response
-    * @param array $extra_params an array of extra variables to post to the server
-    * @return bool
-    */
-	function check_answer ($remoteip, $challenge, $response, $extra_params = array())
+	* Calls an HTTP POST function to verify if the user's guess was correct
+	* @param string $remoteip
+	* @param string $challenge
+	* @return bool
+	*/
+	function check_answer ($remoteip, $challenge)
 	{
 
 		if (\Config::get('recaptcha.private_key') == '')
@@ -91,43 +90,24 @@ class ReCaptcha
 			return false;
 		}
 
-		if ($challenge == null || strlen($challenge) == 0 || $response == null || strlen($response) == 0)
+		if ($challenge == null || strlen($challenge) == 0)
 		{
 			$this->_error = 'Incorrect captcha';
 			return false;
 		}
 
-		$response = $this->_http_post(
-			\Config::get('recaptcha.verify_server'),
-			"/recaptcha/api/verify",
+		$response = $this->send(
 			array (
-				'privatekey' => \Config::get('recaptcha.private_key'),
+				'secret' => \Config::get('recaptcha.private_key'),
+				'response' => $challenge,
 				'remoteip' => $remoteip,
-				'challenge' => $challenge,
-				'response' => $response
-			) + $extra_params
+			)
 		);
-
-		$answers = explode ("\n", $response[1]);
-
-		if (trim($answers[0]) == 'true')
-		{
-			return true;
-		}
+		if($response)
+			return $response->success;
 		else
-		{
-			$this->_error = $answers[1];
-			return false;
-		}
+			throw new \Exception('Couldn\'t get the response back');
 	}
-
-	/**
-	 * Gets the challenge HTML (javascript and non-javascript version).
-	 * @param string $pubkey A public key for reCAPTCHA
-	 * @param string $error The error given by reCAPTCHA (optional, default is null)
-	 * @param boolean $use_ssl Should the request be made over ssl? (optional, default is false)
-	 * @return string - The HTML to be embedded in the user's form.
-   */
 
 	static function get_html ($use_ssl = false)
 	{
@@ -153,58 +133,40 @@ class ReCaptcha
 		return $html;
 	}
 
+
 	/**
-	 * Encodes the given data into a query string format
-	 * @param $data - array of string elements to be encoded
-	 * @return string - encoded request
-	 */
-	function _qsencode($data)
+	* Submits an HTTP POST to a reCAPTCHA server
+	* @param string $host
+	* @param string $path
+	* @param array $data
+	* @param int port
+	* @return array response
+	*/
+	function send($data)
 	{
-		return http_build_query($data);
+		# Create a connection
+		$curl = \Request::forge('https://www.google.com/recaptcha/api/siteverify', 'curl');
+		# Setting our options
+		$curl->set_method('post');
+		$curl->set_params($data);
+		# Set some options to be used in the request
+		$curl->set_options(array(
+			CURLOPT_TIMEOUT => 30,
+			CURLOPT_FOLLOWLOCATION => true,
+		)
+	);
+		// execute the request
+		$curl->execute();
+
+		// fetch the resulting Response object
+		$response = $curl->response();
+
+		return JSON_decode($response->body);
 	}
-
 	/**
-	 * Submits an HTTP POST to a reCAPTCHA server
-	 * @param string $host
-	 * @param string $path
-	 * @param array $data
-	 * @param int port
-	 * @return array response
-	 */
-	function _http_post($host, $path, $data, $port = 80)
-	{
-		$req = $this->_qsencode($data);
-
-		$http_request = implode('',array(
-			"POST $path HTTP/1.0\r\n",
-			"Host: $host\r\n",
-			"Content-Type: application/x-www-form-urlencoded;\r\n",
-			"Content-Length:".strlen($req)."\r\n",
-			"User-Agent: reCAPTCHA/PHP\r\n",
-			"\r\n",
-		$req));
-
-		$response = '';
-		if( false == ( $fs = @fsockopen($host, $port, $errno, $errstr, 10) ) )
-		{
-			throw new \Exception('Could not open socket');
-			return false;
-		}
-
-		fwrite($fs, $http_request);
-		while (!feof($fs))
-		{
-			$response .= fgets($fs, 1160); // One TCP-IP packet
-		}
-		fclose($fs);
-		$response = explode("\r\n\r\n", $response, 2);
-		return $response;
-	}
-
-	/**
-	 * Returns error
-	 * @return string
-	 */
+	* Returns error
+	* @return string
+	*/
 	public function get_error()
 	{
 		if ($this->_error) return $this->_error;
